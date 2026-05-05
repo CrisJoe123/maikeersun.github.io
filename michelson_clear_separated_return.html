@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>迈克尔逊干涉仪光路动画（清晰光路版·回程分离显示）</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root{
+      --bg1:#f6f9fc; --bg2:#eaf1f7; --ink:#1b2734; --muted:#617183;
+      --card:#ffffffee; --line:#d9e5ef; --shadow:0 20px 50px rgba(30,50,80,.12);
+      --blue:#2f80ff; --red:#ef4444; --gold:#f7b731; --violet:#7c3aed;
+    }
+    body{
+      margin:0; min-height:100vh; padding:18px;
+      font-family:"Microsoft YaHei","PingFang SC",Arial,sans-serif;
+      color:var(--ink);
+      background:linear-gradient(180deg, var(--bg1), var(--bg2));
+      display:flex; align-items:center; justify-content:center;
+    }
+    .wrap{
+      width:min(1360px,98vw);
+      display:grid;
+      grid-template-columns:minmax(820px,1fr) 335px;
+      gap:18px;
+      align-items:stretch;
+    }
+    .stage,.panel{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:24px;
+      box-shadow:var(--shadow);
+    }
+    .stage{ padding:16px; position:relative; overflow:hidden; }
+    canvas{
+      width:100%;
+      aspect-ratio:16/10;
+      display:block;
+      border-radius:18px;
+      background:#fff;
+    }
+    .panel{ padding:18px; display:flex; flex-direction:column; gap:14px; }
+    .title{ margin:0; font-size:21px; font-weight:900; letter-spacing:.01em; }
+    .subtitle{ margin:5px 0 0; color:var(--muted); font-size:13px; line-height:1.7; }
+    .card{ background:#f5f8fb; border:1px solid #e3edf6; border-radius:18px; padding:14px; }
+    .tag{ display:inline-flex; padding:5px 10px; border-radius:999px; background:#e8f1ff; color:#1e64b7; font-size:12px; font-weight:800; margin-bottom:8px; }
+    .step-title{ font-size:17px; font-weight:900; margin:0 0 6px; }
+    .step-desc{ color:var(--muted); font-size:13px; line-height:1.75; min-height:92px; }
+    .controls{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    button{
+      border:0; border-radius:14px; padding:11px 10px; font-weight:900; cursor:pointer; font-size:14px;
+      transition:transform .15s ease, box-shadow .15s ease;
+    }
+    button:hover{ transform:translateY(-1px); }
+    .primary{ color:#fff; background:linear-gradient(135deg, #2a6fec, #62a3ff); box-shadow:0 8px 18px rgba(45,111,220,.22); }
+    .secondary{ color:#25405f; background:#eef4fb; border:1px solid #dce7f2; }
+    .row{ display:grid; gap:6px; }
+    .row label{ font-size:13px; color:#526175; font-weight:800; display:flex; justify-content:space-between; }
+    input[type="range"]{ width:100%; accent-color:#2d75e8; }
+    .legend{ display:grid; gap:9px; font-size:13px; color:#526175; }
+    .legend-item{ display:flex; align-items:center; gap:9px; }
+    .sw{ width:31px; height:5px; border-radius:999px; display:inline-block; }
+    .blue{ background:var(--blue); } .red{ background:var(--red); } .gold{ background:var(--gold); } .violet{ background:var(--violet); }
+    .note{ color:#68788a; font-size:12px; line-height:1.65; margin-top:auto; }
+    @media (max-width: 1020px){ .wrap{ grid-template-columns:1fr; } .panel{ order:-1; } }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="stage">
+      <canvas id="scene" width="1280" height="800"></canvas>
+    </section>
+
+    <aside class="panel">
+      <div>
+        <h1 class="title">迈克尔逊干涉仪光路动画</h1>
+        <p class="subtitle">清晰光路版：主光路优先，板内折射局部标注</p>
+      </div>
+
+      <div class="card">
+        <div class="tag" id="stepTag">Step 0</div>
+        <div class="step-title" id="stepTitle">准备演示</div>
+        <div class="step-desc" id="stepDesc">器件先出现：准直系统、分光板 G₁、补偿板 G₂、两反射镜与观察屏。</div>
+      </div>
+
+      <div class="controls">
+        <button class="primary" id="playBtn">开始动画</button>
+        <button class="secondary" id="pauseBtn">暂停</button>
+        <button class="secondary" id="replayBtn">重播</button>
+        <button class="secondary" id="detailBtn">隐藏折射细节</button>
+      </div>
+
+      <div class="card row">
+        <label for="speedRange">动画速度 <span id="speedText">1.00×</span></label>
+        <input id="speedRange" type="range" min="0.5" max="2.0" step="0.05" value="1.0" />
+      </div>
+
+      <div class="card legend">
+        <div class="legend-item"><span class="sw blue"></span>准直入射光</div>
+        <div class="legend-item"><span class="sw red"></span>M₂ 臂：实线去程 / 虚线回程</div>
+        <div class="legend-item"><span class="sw gold"></span>M₁ 臂：透过分光板 G₁</div>
+        <div class="legend-item"><span class="sw violet"></span>两束合束后重合到屏</div>
+      </div>
+
+      <div class="note">
+        说明：主图只画中心光线，避免多条回程线交叉。玻璃内折射用短折线标注；平行玻璃板出射光与入射光平行，但有横向位移。<br />
+        虚线回程为便于观察做了小幅平移；真实实验中返程光沿原路返回并在 G₁ 处重新合束。
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    const canvas = document.getElementById("scene");
+    const ctx = canvas.getContext("2d");
+    const W = canvas.width, H = canvas.height;
+
+    const playBtn = document.getElementById("playBtn");
+    const pauseBtn = document.getElementById("pauseBtn");
+    const replayBtn = document.getElementById("replayBtn");
+    const detailBtn = document.getElementById("detailBtn");
+    const speedRange = document.getElementById("speedRange");
+    const speedText = document.getElementById("speedText");
+    const stepTag = document.getElementById("stepTag");
+    const stepTitle = document.getElementById("stepTitle");
+    const stepDesc = document.getElementById("stepDesc");
+
+    let playing = false;
+    let startTimestamp = null;
+    let pausedTime = 0;
+    let elapsed = 0;
+    let speed = 1;
+    let showDetail = true;
+
+    const COLORS = {
+      blue: "rgba(47,128,255,1)",
+      red: "rgba(239,68,68,1)",
+      gold: "rgba(247,183,49,1)",
+      violet: "rgba(124,58,237,1)",
+      gray: "rgba(117,128,142,0.65)"
+    };
+
+    const P = {
+      lens: { x: 178, y: 430 },
+      beamStart: { x: 58, y: 430 },
+      g1: { x: 500, y: 430, length: 300, thickness: 40, angle: -Math.PI/4, name: "G₁" },
+      g2: { x: 500, y: 245, length: 230, thickness: 32, angle: -Math.PI/4, name: "G₂" },
+      m1: { x: 1115, y: 444 },
+      m2: { x: 505, y: 92 },
+      screen: { x: 500, y: 720 }
+    };
+
+    // ---------- vector utilities ----------
+    function V(x,y){ return {x,y}; }
+    function add(a,b){ return {x:a.x+b.x, y:a.y+b.y}; }
+    function sub(a,b){ return {x:a.x-b.x, y:a.y-b.y}; }
+    function mul(a,k){ return {x:a.x*k, y:a.y*k}; }
+    function dot(a,b){ return a.x*b.x + a.y*b.y; }
+    function len(a){ return Math.hypot(a.x,a.y); }
+    function unit(a){ const L = len(a) || 1; return {x:a.x/L, y:a.y/L}; }
+    function perp(a){ return {x:-a.y, y:a.x}; }
+    function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+    function lerp(a,b,p){ return a + (b-a)*p; }
+    function lerpPoint(a,b,p){ return {x:lerp(a.x,b.x,p), y:lerp(a.y,b.y,p)}; }
+    function easeInOut(x){ x=clamp(x,0,1); return x<0.5 ? 2*x*x : 1-Math.pow(-2*x+2,2)/2; }
+    function easeOut(x){ x=clamp(x,0,1); return 1-Math.pow(1-x,3); }
+    function localProgress(t,start,duration){ return clamp((t-start)/duration,0,1); }
+
+    function lineIntersectionRayLine(p, v, q, u){
+      // p + t v = q + s u
+      const det = v.x * (-u.y) - v.y * (-u.x);
+      if(Math.abs(det) < 1e-9) return null;
+      const dx = q.x - p.x, dy = q.y - p.y;
+      const t = (dx * (-u.y) - dy * (-u.x)) / det;
+      const s = (v.x * dy - v.y * dx) / det;
+      return {t, s, point:add(p, mul(v,t))};
+    }
+
+    function slabBasis(slab){
+      const u = V(Math.cos(slab.angle), Math.sin(slab.angle));
+      const n = perp(u);
+      return {u, n};
+    }
+
+    function refractDir(vIn, normalIntoMedium2, n1, n2){
+      const v = unit(vIn);
+      const m = unit(normalIntoMedium2);
+      const cosI = clamp(dot(v,m), -1, 1);
+      const tangential = sub(v, mul(m, cosI));
+      const sinI = len(tangential);
+      const eta = n1 / n2;
+      const sinT = eta * sinI;
+      if(sinT >= 1){
+        // Total internal reflection is not expected in this geometry; fallback to reflection.
+        return sub(v, mul(m, 2*dot(v,m)));
+      }
+      const tHat = sinI < 1e-8 ? V(0,0) : mul(tangential, 1/sinI);
+      const cosT = Math.sqrt(1 - sinT*sinT);
+      return unit(add(mul(m, cosT), mul(tHat, sinT)));
+    }
+
+    function traceThroughSlab(start, dir, slab, nGlass=1.52){
+      const v0 = unit(dir);
+      const {u,n} = slabBasis(slab);
+      const c = V(slab.x, slab.y);
+      const candidates = [];
+      [-1, 1].forEach(sign => {
+        const q = add(c, mul(n, sign * slab.thickness/2));
+        const hit = lineIntersectionRayLine(start, v0, q, u);
+        if(hit && hit.t > 0 && Math.abs(hit.s) <= slab.length/2){
+          candidates.push({ ...hit, sign });
+        }
+      });
+      candidates.sort((a,b)=>a.t-b.t);
+      const entry = candidates[0];
+      if(!entry) return {points:[start], entry:null, exit:null, outDir:v0};
+
+      const normalIntoGlass = dot(v0,n) > 0 ? n : mul(n,-1);
+      const vg = refractDir(v0, normalIntoGlass, 1.0, nGlass);
+      const exitSign = -entry.sign;
+      const exitFacePoint = add(c, mul(n, exitSign * slab.thickness/2));
+      const exit = lineIntersectionRayLine(entry.point, vg, exitFacePoint, u);
+      const normalIntoAir = dot(vg,n) > 0 ? n : mul(n,-1);
+      const vOut = refractDir(vg, normalIntoAir, nGlass, 1.0);
+      return { points:[entry.point, exit.point], entry:entry.point, exit:exit.point, insideDir:vg, outDir:vOut };
+    }
+
+    // ---------- geometry computed from Snell-law slab tracing ----------
+    const incidentDir = V(1,0);
+    const incomingStart = V(P.lens.x + 32, P.lens.y);
+    const g1Trace = traceThroughSlab(incomingStart, incidentDir, P.g1);
+    const splitPoint = g1Trace.entry;              // G₁ coated first surface: split/recombine point
+    P.screen.x = splitPoint.x;                 // Align the detector with the recombined output beam
+    const g1ExitRight = g1Trace.exit;              // transmitted beam exits G₁ toward M₁
+
+    const redUp = traceThroughSlab(splitPoint, V(0,-1), P.g2);
+    const m2Hit = V(redUp.exit.x, P.m2.y + 25);
+    const m1Hit = V(P.m1.x - 24, g1ExitRight.y);
+    const screenHit = V(P.screen.x, P.screen.y - 36);
+
+    // Display-only offsets: in a real Michelson interferometer the return beams retrace their arms.
+    // Here the dashed return beams are shifted slightly to the side so the outgoing and return paths remain readable.
+    const returnGap = 18;
+    const PATHS = {
+      incoming: [V(58,P.lens.y), V(P.lens.x-16,P.lens.y), V(P.lens.x+22,P.lens.y), splitPoint],
+      // Red arm: reflection by G₁, then compensation plate, then M₂.
+      redOut: [splitPoint, redUp.entry, redUp.exit, m2Hit],
+      redBack: [
+        V(m2Hit.x + returnGap, m2Hit.y),
+        V(redUp.exit.x + returnGap, redUp.exit.y),
+        V(redUp.entry.x + returnGap, redUp.entry.y),
+        V(splitPoint.x + returnGap, splitPoint.y - returnGap),
+        splitPoint
+      ],
+      // Gold arm: transmission through G₁, then M₁. Dashed return is shifted downward for legibility.
+      goldOut: [splitPoint, g1ExitRight, m1Hit],
+      goldBack: [
+        V(m1Hit.x, m1Hit.y + returnGap),
+        V(g1ExitRight.x, g1ExitRight.y + returnGap),
+        V(splitPoint.x + returnGap*1.4, splitPoint.y + returnGap),
+        splitPoint
+      ],
+      // At G₁ the two return beams recombine. Main observable output is still drawn as one overlapped purple beam.
+      merged: [splitPoint, V(splitPoint.x, screenHit.y-60), screenHit],
+      unused: [splitPoint, V(P.lens.x + 35, splitPoint.y)]
+    };
+
+    const steps = [
+      { t:0.0, title:"准备演示", desc:"实线表示去程，虚线表示回程；回程线作小幅平移，避免与去程完全重合。" },
+      { t:0.8, title:"准直光入射", desc:"激光经扩束/准直后成为近似平行光束，水平入射到分光板 G₁ 的镀膜面。" },
+      { t:2.1, title:"G₁ 分束", desc:"G₁ 将入射光分成两路：红色 M₂ 臂为反射光；黄色 M₁ 臂为透射光，透射时在玻璃内折射。" },
+      { t:4.2, title:"两臂返回", desc:"两束光在 M₂、M₁ 上反射后返回。为便于观察，虚线回程相对真实路径作小幅平移；物理含义仍是沿原臂返回。" },
+      { t:6.4, title:"G₁ 合束", desc:"虚线回程最终回到 G₁ 的同一合束点。未利用输出用灰色虚线表示，主输出用紫色重合光束表示。" },
+      { t:8.0, title:"观察屏干涉", desc:"两束相干光在观察屏上空间重合；M₂ 微移会改变两臂光程差，使条纹发生移动。" }
+    ];
+    const totalDuration = 11.5;
+
+    // ---------- drawing helpers ----------
+    function drawRoundRect(x,y,w,h,r){
+      ctx.beginPath();
+      ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+      ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+      ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+      ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
+    }
+
+    function drawLabel(text,x,y,align="center"){
+      ctx.save();
+      ctx.font = "800 22px Microsoft YaHei, PingFang SC, Arial";
+      const w = ctx.measureText(text).width + 24;
+      const h = 36;
+      const left = align === "left" ? x : x - w/2;
+      ctx.fillStyle = "rgba(255,239,184,0.94)";
+      ctx.strokeStyle = "rgba(160,130,40,0.18)";
+      drawRoundRect(left, y-h/2, w, h, 9); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#111827";
+      ctx.textAlign = align; ctx.textBaseline = "middle";
+      ctx.fillText(text, align === "left" ? x+12 : x, y+1);
+      ctx.restore();
+    }
+
+    function drawSmallText(text,x,y,align="left", color="#5d6b7c"){
+      ctx.save();
+      ctx.font = "700 16px Microsoft YaHei, PingFang SC, Arial";
+      ctx.fillStyle = color;
+      ctx.textAlign = align;
+      ctx.fillText(text,x,y);
+      ctx.restore();
+    }
+
+    function drawLens(cx,cy){
+      ctx.save();
+      const grad = ctx.createLinearGradient(cx-20,cy,cx+20,cy);
+      grad.addColorStop(0,"#07344f"); grad.addColorStop(.5,"#28bdf4"); grad.addColorStop(1,"#07344f");
+      ctx.fillStyle = grad; ctx.strokeStyle = "#062234"; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.ellipse(cx,cy,16,78,0,0,Math.PI*2); ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawMirror(x,y,w,h,horizontal=true){
+      ctx.save();
+      const grad = horizontal ? ctx.createLinearGradient(x,y,x,y+h) : ctx.createLinearGradient(x,y,x+w,y);
+      grad.addColorStop(0,"#0b1620"); grad.addColorStop(.25,"#6b7882"); grad.addColorStop(.6,"#313b44"); grad.addColorStop(1,"#071018");
+      ctx.fillStyle = grad; ctx.strokeStyle = "#06131d"; ctx.lineWidth = 4;
+      drawRoundRect(x,y,w,h,4); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "rgba(255,255,255,0.16)";
+      if(horizontal){
+        ctx.beginPath(); ctx.moveTo(x+18,y+6); ctx.lineTo(x+w-18,y+6); ctx.lineTo(x+w-34,y+h-6); ctx.lineTo(x+34,y+h-6); ctx.closePath(); ctx.fill();
+      }else{
+        ctx.beginPath(); ctx.moveTo(x+7,y+18); ctx.lineTo(x+w-7,y+38); ctx.lineTo(x+w-7,y+h-22); ctx.lineTo(x+7,y+h-8); ctx.closePath(); ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    function drawSlab(slab, isG1=false){
+      ctx.save();
+      ctx.translate(slab.x, slab.y); ctx.rotate(slab.angle);
+      const grad = ctx.createLinearGradient(0,-slab.thickness/2,0,slab.thickness/2);
+      grad.addColorStop(0,"rgba(235,250,255,0.96)");
+      grad.addColorStop(.5,"rgba(157,221,255,0.84)");
+      grad.addColorStop(1,"rgba(235,250,255,0.96)");
+      ctx.fillStyle = grad;
+      ctx.strokeStyle = "#17384d"; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.rect(-slab.length/2, -slab.thickness/2, slab.length, slab.thickness); ctx.fill(); ctx.stroke();
+
+      // Coating or reference line. For clarity, G₁ gets a strong film line; G₂ gets a weaker center line.
+      ctx.lineCap = "round";
+      ctx.strokeStyle = isG1 ? "rgba(124,58,237,0.92)" : "rgba(52,152,219,0.45)";
+      ctx.lineWidth = isG1 ? 6 : 3;
+      ctx.beginPath(); ctx.moveTo(-slab.length/2+16, 0); ctx.lineTo(slab.length/2-16, 0); ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawScreen(phase=0, alpha=0){
+      const cx = P.screen.x, cy = P.screen.y;
+      ctx.save();
+      const grad = ctx.createRadialGradient(cx-14, cy-18, 12, cx, cy, 112);
+      grad.addColorStop(0,"#d7dbdd"); grad.addColorStop(1,"#8e9396");
+      ctx.fillStyle = grad; ctx.strokeStyle = "#082232"; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.ellipse(cx,cy,110,42,0,0,Math.PI*2); ctx.fill(); ctx.stroke();
+      ctx.restore();
+
+      if(alpha <= 0) return;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.beginPath(); ctx.ellipse(cx,cy,101,34,0,0,Math.PI*2); ctx.clip();
+      ctx.fillStyle = "#111827"; ctx.fillRect(cx-118,cy-48,236,96);
+      const shift = Math.sin(phase) * 6;
+      for(let r=12; r<112; r+=15){
+        ctx.strokeStyle = "rgba(225,28,28,0.95)";
+        ctx.lineWidth = r < 28 ? 3 : 4;
+        ctx.beginPath(); ctx.ellipse(cx+shift, cy, r, r*0.39, 0, 0, Math.PI*2); ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function drawArrowHead(p, dir, color, size=11){
+      const v = unit(dir);
+      const n = perp(v);
+      ctx.save();
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x - v.x*size + n.x*size*0.45, p.y - v.y*size + n.y*size*0.45);
+      ctx.lineTo(p.x - v.x*size - n.x*size*0.45, p.y - v.y*size - n.y*size*0.45);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+
+    function strokePartial(points, targetLen){
+      ctx.beginPath(); ctx.moveTo(points[0].x, points[0].y);
+      let remain = targetLen, last = {...points[0]}, prev = {...points[0]};
+      for(let i=0;i<points.length-1;i++){
+        const seg = sub(points[i+1], points[i]);
+        const L = len(seg);
+        if(remain <= 0) break;
+        if(remain >= L){
+          ctx.lineTo(points[i+1].x, points[i+1].y);
+          prev = {...points[i]}; last = {...points[i+1]}; remain -= L;
+        }else{
+          const q = remain / L;
+          last = lerpPoint(points[i], points[i+1], q);
+          prev = {...points[i]};
+          ctx.lineTo(last.x,last.y); remain = 0;
+        }
+      }
+      ctx.stroke();
+      return {last, prev};
+    }
+
+    function drawPath(points, color, progress=1, width=4, alpha=1, dashed=false, arrow=true){
+      const p = clamp(progress,0,1); if(p <= 0) return;
+      let total = 0;
+      for(let i=0;i<points.length-1;i++) total += len(sub(points[i+1], points[i]));
+      const target = total * p;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.lineCap = "round"; ctx.lineJoin = "round";
+      if(dashed) ctx.setLineDash([12,9]);
+      ctx.strokeStyle = color.replace("1)", "0.16)"); ctx.lineWidth = width + 8;
+      strokePartial(points, target);
+      ctx.strokeStyle = color; ctx.lineWidth = width;
+      const res = strokePartial(points, target);
+      if(arrow && p > 0.08){
+        const d = sub(res.last, res.prev);
+        if(len(d)>0.1) drawArrowHead(res.last, d, color, width*3.0);
+      }
+      ctx.restore();
+    }
+
+    function drawBeamBundle(progress){
+      const p = easeInOut(progress);
+      const offsets = [-26,0,26];
+      offsets.forEach(off=>{
+        drawPath([V(58,P.lens.y+off), V(P.lens.x-18,P.lens.y+off)], COLORS.blue, p, 3, 0.85, false, false);
+        drawPath([V(P.lens.x+20,P.lens.y+off*0.35), splitPoint], COLORS.blue, p, 2.5, off===0?1:0.48, false, off===0);
+      });
+    }
+
+    function drawInteractionNode(){
+      ctx.save();
+      ctx.fillStyle = "rgba(255,255,255,0.95)";
+      ctx.strokeStyle = "rgba(30,100,183,0.45)";
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(splitPoint.x,splitPoint.y,8,0,Math.PI*2); ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawFramingBoxes(){
+      ctx.save();
+      // Very light guide axes to emphasize separated arms.
+      ctx.strokeStyle = "rgba(120,132,146,0.18)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([8,8]);
+      ctx.beginPath(); ctx.moveTo(splitPoint.x, 115); ctx.lineTo(splitPoint.x, P.screen.y-30); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(P.lens.x+20, g1ExitRight.y); ctx.lineTo(P.m1.x-32, g1ExitRight.y); ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawApparatus(t){
+      drawFramingBoxes();
+      drawLens(P.lens.x, P.lens.y);
+      drawSlab(P.g1, true);
+      drawSlab(P.g2, false);
+      drawMirror(355, P.m2.y, 310, 28, true);
+      drawMirror(P.m1.x, 272, 34, 340, false);
+      drawScreen(elapsed*1.5, easeOut(localProgress(t,8.0,1.2)));
+
+      drawLabel("扩束/准直", P.lens.x, 540);
+      drawLabel("分光板 G₁", 392, 626, "left");
+      drawLabel("补偿板 G₂", 610, 220, "left");
+      drawLabel("动镜 M₂", 672, 105, "left");
+      drawLabel("定镜 M₁", 1088, 238, "left");
+      drawLabel("观察屏", 612, 752, "left");
+      drawSmallText("G₁ 镀膜面：分光 / 合束", 574, 367, "left", "#6d45c3");
+      drawSmallText("G₂ 与 G₁ 等厚、平行、同材质", 606, 262, "left", "#4c6178");
+    }
+
+    function drawRefractionMarkers(t){
+      if(!showDetail) return;
+      const appear = easeOut(localProgress(t,2.0,0.8));
+      if(appear <= 0) return;
+      ctx.save();
+      ctx.globalAlpha = appear;
+      // Mark the actual refracted segments inside G1 and G2 using thicker translucent core.
+      drawPath([splitPoint, g1ExitRight], COLORS.gold, 1, 7, 0.32, false, false);
+      drawPath([redUp.entry, redUp.exit], COLORS.red, 1, 7, 0.30, false, false);
+
+      // Refracted angle note, placed in empty lower-left area.
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.strokeStyle = "rgba(52,93,130,0.12)";
+      drawRoundRect(44, 618, 330, 88, 16); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#35465c";
+      ctx.font = "800 17px Microsoft YaHei, PingFang SC, Arial";
+      ctx.fillText("板内折射：n₁ sinθᵢ = n₂ sinθg", 64, 650);
+      ctx.font = "700 15px Microsoft YaHei, PingFang SC, Arial";
+      ctx.fillStyle = "#657386";
+      ctx.fillText("平行板出射光仍平行，但有横向位移", 64, 678);
+      ctx.restore();
+    }
+
+    function drawReturnOffsetNote(t){
+      const appear = easeOut(localProgress(t,4.2,0.8));
+      if(appear <= 0) return;
+      ctx.save();
+      ctx.globalAlpha = appear;
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.strokeStyle = "rgba(52,93,130,0.12)";
+      drawRoundRect(760, 640, 360, 66, 16); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#35465c";
+      ctx.font = "800 16px Microsoft YaHei, PingFang SC, Arial";
+      ctx.fillText("虚线回程已作示意平移", 782, 666);
+      ctx.font = "700 14px Microsoft YaHei, PingFang SC, Arial";
+      ctx.fillStyle = "#657386";
+      ctx.fillText("真实返程近似沿原路返回，在 G₁ 处合束", 782, 691);
+      ctx.restore();
+    }
+
+    function drawMirrorMotion(t){
+      const p = easeOut(localProgress(t,8.0,1.0));
+      if(p <= 0) return;
+      ctx.save();
+      const x = 690;
+      const y1 = P.m2.y + 8;
+      const amp = Math.sin(t*4) * 8 * p;
+      ctx.strokeStyle = "rgba(239,68,68,0.92)";
+      ctx.fillStyle = "rgba(239,68,68,0.92)";
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(x, y1-12); ctx.lineTo(x, y1+32+amp); ctx.stroke();
+      drawArrowHead(V(x,y1+32+amp), V(0,1), "rgba(239,68,68,0.92)", 12);
+      ctx.font = "800 17px Microsoft YaHei, PingFang SC, Arial";
+      ctx.fillText("M₂ 微移 d → ΔL≈2d", x+18, y1+22);
+      ctx.restore();
+    }
+
+    function drawCaption(t){
+      const active = getActiveStep(t);
+      ctx.save();
+      ctx.fillStyle = "rgba(255,255,255,0.94)";
+      ctx.strokeStyle = "rgba(52,93,130,0.14)";
+      drawRoundRect(38, 28, 455, 82, 18); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#1e64b7";
+      ctx.font = "900 22px Microsoft YaHei, PingFang SC, Arial";
+      ctx.textAlign = "left";
+      ctx.fillText(`步骤：${active.title}`, 60, 61);
+      ctx.fillStyle = "#5c6a7e";
+      ctx.font = "600 17px Microsoft YaHei, PingFang SC, Arial";
+      ctx.fillText("虚线回程小幅平移，避免与去程重合", 60, 91);
+      ctx.restore();
+    }
+
+    function getActiveStep(t){
+      let active = steps[0];
+      for(const s of steps){ if(t >= s.t) active = s; }
+      return active;
+    }
+
+    function updateStatus(t){
+      let idx = 0;
+      for(let i=0;i<steps.length;i++){ if(t >= steps[i].t) idx = i; }
+      stepTag.textContent = `Step ${idx}`;
+      stepTitle.textContent = steps[idx].title;
+      stepDesc.textContent = steps[idx].desc;
+    }
+
+    function drawOpticalPaths(t){
+      // 1) incoming collimated beam
+      drawBeamBundle(localProgress(t,0.8,1.0));
+
+      // 2) split and outbound arms
+      const pOut = easeInOut(localProgress(t,2.1,1.65));
+      drawPath(PATHS.redOut, COLORS.red, pOut, 4, 0.95, false, true);
+      drawPath(PATHS.goldOut, COLORS.gold, pOut, 4, 0.95, false, true);
+
+      // 3) return arms: dashed and deliberately offset from the outgoing beams for readability.
+      const pBack = easeInOut(localProgress(t,4.2,1.55));
+      drawPath(PATHS.redBack, COLORS.red, pBack, 3.2, 0.66, true, true);
+      drawPath(PATHS.goldBack, COLORS.gold, pBack, 3.2, 0.66, true, true);
+
+      // 4) recombined output: draw as one purple beam, not two separated beams.
+      const pMerge = easeInOut(localProgress(t,6.4,1.15));
+      drawPath(PATHS.unused, COLORS.gray, pMerge, 2.2, 0.62, true, true);
+      drawPath(PATHS.merged, COLORS.violet, pMerge, 5, 0.96, false, true);
+
+      // Completed merged beam remains visible through fringe stage.
+      if(t > 7.5) drawPath(PATHS.merged, COLORS.violet, 1, 5, 0.75, false, true);
+
+      drawInteractionNode();
+      drawRefractionMarkers(t);
+      drawReturnOffsetNote(t);
+      drawMirrorMotion(t);
+    }
+
+    function draw(){
+      ctx.clearRect(0,0,W,H);
+      ctx.fillStyle = "#fff"; ctx.fillRect(0,0,W,H);
+      drawApparatus(elapsed);
+      drawOpticalPaths(elapsed);
+      drawCaption(elapsed);
+      updateStatus(elapsed);
+    }
+
+    function loop(timestamp){
+      if(!playing){ draw(); return; }
+      if(startTimestamp === null) startTimestamp = timestamp;
+      elapsed = pausedTime + ((timestamp - startTimestamp)/1000) * speed;
+      if(elapsed >= totalDuration){ elapsed = totalDuration; playing = false; pausedTime = elapsed; }
+      draw(); requestAnimationFrame(loop);
+    }
+
+    function play(){
+      if(elapsed >= totalDuration){ elapsed = 0; pausedTime = 0; }
+      playing = true; startTimestamp = null; requestAnimationFrame(loop);
+    }
+    function pause(){ if(!playing) return; playing = false; pausedTime = elapsed; draw(); }
+    function replay(){ elapsed = 0; pausedTime = 0; playing = true; startTimestamp = null; requestAnimationFrame(loop); }
+
+    playBtn.addEventListener("click", play);
+    pauseBtn.addEventListener("click", pause);
+    replayBtn.addEventListener("click", replay);
+    detailBtn.addEventListener("click", ()=>{
+      showDetail = !showDetail;
+      detailBtn.textContent = showDetail ? "隐藏折射细节" : "显示折射细节";
+      draw();
+    });
+    speedRange.addEventListener("input", (e)=>{
+      speed = Number(e.target.value);
+      speedText.textContent = `${speed.toFixed(2)}×`;
+    });
+
+    draw();
+  </script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"7939e04a4baf43c8b86a560f74aac60e","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"e36302e0d2054d8eac5404d2e1aee074","r":1,"server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>
